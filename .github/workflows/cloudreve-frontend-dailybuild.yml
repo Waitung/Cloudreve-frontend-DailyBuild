@@ -1,0 +1,78 @@
+name: Cloudreve frontend Daily Build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 20 * * *'
+      
+jobs:
+  cloudreve-frontend-daily-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: check tags
+      run: |
+        latest_tag=`curl -s https://api.github.com/repos/$GITHUB_REPOSITORY/tags | grep -m 1 "name" | cut -d\" -f4`
+        today=`date -d "8 hour" +%Y-%m-%d`
+        if [[ $latest_tag != $today ]]; then echo "diff_date=true" >> $GITHUB_ENV; fi
+
+    - name: check manually
+      if: env.diff_date
+      run: |
+        if [[ $GITHUB_EVENT_NAME == 'workflow_dispatch' ]]; then
+          echo "manually=true" >> $GITHUB_ENV
+        else 
+          echo "schedule=true" >> $GITHUB_ENV
+        fi
+
+    - name: check commits
+      if: env.schedule
+      run: |
+        repo="cloudreve/frontend"
+        commits_date=`curl -s https://api.github.com/repos/$repo/commits | grep -m 1 "date" | cut -d\" -f4`
+        yesterday=`date -d "-1 day" +"%Y-%m-%d 20:00:00"`
+        s_commits_date=`date -d "$commits_date" +%s`
+        s_yesterday=`date -d "$yesterday" +%s`
+        if [[ $s_commits_date -gt $s_yesterday ]]; then echo "new_commits=true" >> $GITHUB_ENV; fi
+        
+    - name: install Node.js
+      if: env.manually || env.new_commits
+      uses: actions/setup-node@v2
+      with:
+        node-version: '12.x'
+
+    - name: install Yarn
+      if: env.manually || env.new_commits
+      run: npm install yarn -g
+
+    - name: download code
+      if: env.manually || env.new_commits
+      run: |
+        cd ~
+        git clone https://github.com/cloudreve/frontend.git
+      
+    - name: build
+      if: env.manually || env.new_commits
+      run: |
+        cd ~/frontend
+        yarn install
+        CI=false yarn run build
+        rm -f build/*.map
+
+    - name: checkout
+      if: env.manually || env.new_commits
+      uses: actions/checkout@v2
+
+    - name: push
+      if: env.manually || env.new_commits
+      run: |
+        rm -rf ./statics
+        mv ~/frontend/build ./statics
+        today=`date -d "8 hour" +%Y-%m-%d`
+        git config user.name waitung
+        git config user.email wai.tung@foxmail.com
+        git add .
+        git commit -m "build $today"
+        git push
+        git tag -a "$today" -m "build $today"
+        git push origin "$today"
