@@ -57,7 +57,7 @@ jobs:
         cd ~/frontend
         yarn install
         CI=false yarn run build
-        rm -f build/*.map
+        find ./build -name '*.map' -type f -print -exec rm -rf {} \;
 
     - name: checkout
       if: env.manually || env.new_commits
